@@ -139,6 +139,14 @@ async getRank(rankType: RankType) : Promise<Result<GetRankResult, CommandError>>
     else return { status: "error", error: e  as any };
 }
 },
+async exportFavoritesExcel(sort: GetFavoriteSort, savePath: string) : Promise<Result<string, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_favorites_excel", { sort, savePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDownloadedComics() : Promise<Comic[]> {
     return await TAURI_INVOKE("get_downloaded_comics");
 },
@@ -209,6 +217,7 @@ downloadSleepingEvent: DownloadSleepingEvent,
 downloadSpeedEvent: DownloadSpeedEvent,
 downloadTaskEvent: DownloadTaskEvent,
 exportCbzEvent: ExportCbzEvent,
+exportFavoritesExcelEvent: ExportFavoritesExcelEvent,
 exportPdfEvent: ExportPdfEvent,
 logEvent: LogEvent,
 updateDownloadedComicsEvent: UpdateDownloadedComicsEvent
@@ -218,6 +227,7 @@ downloadSleepingEvent: "download-sleeping-event",
 downloadSpeedEvent: "download-speed-event",
 downloadTaskEvent: "download-task-event",
 exportCbzEvent: "export-cbz-event",
+exportFavoritesExcelEvent: "export-favorites-excel-event",
 exportPdfEvent: "export-pdf-event",
 logEvent: "log-event",
 updateDownloadedComicsEvent: "update-downloaded-comics-event"
@@ -245,6 +255,7 @@ export type DownloadSpeedEvent = { speed: string }
 export type DownloadTaskEvent = { event: "Create"; data: { state: DownloadTaskState; comic: Comic; chapterInfo: ChapterInfo; downloadedImgCount: number; totalImgCount: number } } | { event: "Update"; data: { chapterId: string; state: DownloadTaskState; downloadedImgCount: number; totalImgCount: number } }
 export type DownloadTaskState = "Pending" | "Downloading" | "Paused" | "Cancelled" | "Completed" | "Failed"
 export type ExportCbzEvent = { event: "Start"; data: { uuid: string; comicTitle: string; total: number } } | { event: "Progress"; data: { uuid: string; current: number } } | { event: "Error"; data: { uuid: string } } | { event: "End"; data: { uuid: string; chapterExportDir: string } }
+export type ExportFavoritesExcelEvent = { event: "GettingFavorites"; data: { current: number; total: number } } | { event: "End"; data: { comicCount: number; savePath: string } }
 export type ExportPdfEvent = { event: "CreateStart"; data: { uuid: string; comicTitle: string; total: number } } | { event: "CreateProgress"; data: { uuid: string; current: number } } | { event: "CreateError"; data: { uuid: string } } | { event: "CreateEnd"; data: { uuid: string; chapterExportDir: string } } | { event: "MergeStart"; data: { uuid: string; comicTitle: string } } | { event: "MergeError"; data: { uuid: string } } | { event: "MergeEnd"; data: { uuid: string; chapterExportDir: string } }
 export type GetFavoriteResult = Pagination<ComicInFavorite>
 export type GetFavoriteSort = "TimeNewest" | "TimeOldest"

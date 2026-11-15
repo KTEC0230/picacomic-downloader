@@ -23,6 +23,10 @@
 
 https://github.com/user-attachments/assets/8d08bba1-851c-41e4-ba3e-66f99c7f614b
 
+# 导出收藏夹Excel
+
+在`漫画收藏`页面点击`导出收藏夹Excel`按钮，选择保存位置后会自动获取整个收藏夹(含分页)，并把每部漫画的**漫画名称**、**作者**、**总话数**写入Excel表格(`.xlsx`，表头加粗且冻结首行)。导出的排序与页面当前选择的排序一致，作者缺失时会显示为`未知`。
+
 # 禁漫天堂下载器  
 [![Readme Card](https://github-readme-stats.vercel.app/api/pin/?username=lanyeeee&repo=jmcomic-downloader)](https://github.com/lanyeeee/jmcomic-downloader)  
 

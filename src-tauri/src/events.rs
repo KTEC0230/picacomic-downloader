@@ -134,6 +134,15 @@ pub enum DownloadAllFavoritesEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[serde(tag = "event", content = "data")]
+pub enum ExportFavoritesExcelEvent {
+    #[serde(rename_all = "camelCase")]
+    GettingFavorites { current: i64, total: i64 },
+    #[serde(rename_all = "camelCase")]
+    End { comic_count: i64, save_path: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[serde(tag = "event", content = "data")]
 pub enum UpdateDownloadedComicsEvent {
     #[serde(rename_all = "camelCase")]
     GetComicStart { total: i64 },

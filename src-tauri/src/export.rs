@@ -12,6 +12,7 @@ use lopdf::{
 };
 use parking_lot::Mutex;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rust_xlsxwriter::{Format, Workbook};
 use tauri::AppHandle;
 use tauri_specta::Event;
 use zip::{write::SimpleFileOptions, ZipWriter};
@@ -19,6 +20,7 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 use crate::{
     events::{ExportCbzEvent, ExportPdfEvent},
     extensions::{AnyhowErrorToStringChain, PathIsImg},
+    responses::ComicInFavoriteRespData,
     types::{ChapterInfo, Comic, ComicInfo},
 };
 
@@ -524,4 +526,213 @@ fn merge_pdf(chapter_pdf_paths: Vec<PathBuf>, save_path: &Path) -> anyhow::Resul
     doc.save(save_path)
         .context(format!("保存`{}`失败", save_path.display()))?;
     Ok(())
+}
+
+/// 收藏夹Excel表格中的一行数据
+pub struct FavoriteExcelRow {
+    pub title: String,
+    pub author: String,
+    pub eps_count: i64,
+}
+
+impl FavoriteExcelRow {
+    /// 从收藏夹漫画的响应数据构造一行Excel数据，作者为空时显示为`未知`
+    pub fn from_resp_data(resp_data: ComicInFavoriteRespData) -> Self {
+        let author = if resp_data.author.is_empty() {
+            "未知".to_string()
+        } else {
+            resp_data.author
+        };
+        Self {
+            title: resp_data.title,
+            author,
+            eps_count: resp_data.eps_count,
+        }
+    }
+}
+
+/// 规范化Excel保存路径，如果扩展名不是`xlsx`(大小写不敏感)，则在其后追加`.xlsx`
+pub fn normalize_excel_save_path(save_path: &str) -> anyhow::Result<PathBuf> {
+    let path = PathBuf::from(save_path);
+    if path.as_os_str().is_empty() {
+        return Err(anyhow!("保存路径为空"));
+    }
+
+    let has_xlsx_ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("xlsx"))
+        .unwrap_or(false);
+
+    if has_xlsx_ext {
+        return Ok(path);
+    }
+
+    let mut file_name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .ok_or_else(|| anyhow!("`{}`不是一个有效的文件路径", path.display()))?;
+    file_name.push(".xlsx");
+    Ok(path.with_file_name(file_name))
+}
+
+/// 将收藏夹中每部漫画的名称、作者、总话数写入Excel表格，保存到`save_path`中
+pub fn favorites_excel(rows: &[FavoriteExcelRow], save_path: &Path) -> anyhow::Result<()> {
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+    worksheet
+        .set_name("收藏夹")
+        .context("设置Excel工作表名称失败")?;
+    // 表头加粗
+    let header_format = Format::new().set_bold();
+    let headers = ["漫画名称", "作者", "总话数"];
+    for (col, header) in headers.iter().enumerate() {
+        worksheet
+            .write_with_format(0, col as u16, *header, &header_format)
+            .context(format!("写入表头`{header}`失败"))?;
+    }
+    // 设置列宽，避免中文内容显示不全
+    worksheet
+        .set_column_width(0, 48)
+        .context("设置`漫画名称`列宽失败")?;
+    worksheet
+        .set_column_width(1, 24)
+        .context("设置`作者`列宽失败")?;
+    worksheet
+        .set_column_width(2, 10)
+        .context("设置`总话数`列宽失败")?;
+    // 冻结表头行，方便浏览
+    worksheet.set_freeze_panes(1, 0).context("冻结表头行失败")?;
+
+    for (i, row) in rows.iter().enumerate() {
+        let row_idx = (i + 1) as u32;
+        worksheet
+            .write_string(row_idx, 0, &row.title)
+            .context(format!("写入漫画`{}`的名称失败", row.title))?;
+        worksheet
+            .write_string(row_idx, 1, &row.author)
+            .context(format!("写入漫画`{}`的作者失败", row.title))?;
+        #[allow(clippy::cast_precision_loss)]
+        let eps_count = row.eps_count as f64;
+        worksheet
+            .write_number(row_idx, 2, eps_count)
+            .context(format!("写入漫画`{}`的总话数失败", row.title))?;
+    }
+
+    workbook
+        .save(save_path)
+        .context(format!("保存Excel到`{}`失败", save_path.display()))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use super::*;
+    use crate::responses::ImageRespData;
+
+    /// 构造一个收藏夹漫画的响应数据，方便测试
+    fn resp_data(title: &str, author: &str, eps_count: i64) -> ComicInFavoriteRespData {
+        ComicInFavoriteRespData {
+            id: "test_id".to_string(),
+            title: title.to_string(),
+            author: author.to_string(),
+            pages_count: 100,
+            eps_count,
+            finished: true,
+            categories: vec!["测试分类".to_string()],
+            thumb: ImageRespData::default(),
+            likes_count: 10,
+        }
+    }
+
+    #[test]
+    fn test_from_resp_data_missing_author() {
+        // 作者为空时应显示为`未知`
+        let row = FavoriteExcelRow::from_resp_data(resp_data("测试漫画", "", 12));
+        assert_eq!(row.author, "未知");
+        assert_eq!(row.title, "测试漫画");
+        assert_eq!(row.eps_count, 12);
+        // 作者不为空时保持原样
+        let row = FavoriteExcelRow::from_resp_data(resp_data("测试漫画", "测试作者", 3));
+        assert_eq!(row.author, "测试作者");
+    }
+
+    #[test]
+    fn test_normalize_excel_save_path() {
+        // 无扩展名时追加.xlsx
+        assert!(normalize_excel_save_path("收藏夹")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .ends_with("收藏夹.xlsx"));
+        // 扩展名不是xlsx时在其后追加.xlsx
+        assert!(normalize_excel_save_path("收藏夹.xls")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .ends_with("收藏夹.xls.xlsx"));
+        // 扩展名是xlsx(大小写不敏感)时保持原样
+        assert!(normalize_excel_save_path("收藏夹.xlsx").is_ok());
+        assert!(normalize_excel_save_path("收藏夹.XLSX").is_ok());
+        // 空路径报错
+        assert!(normalize_excel_save_path("").is_err());
+    }
+
+    /// 将xml中的转义实体还原为原字符，方便断言单元格内容
+    fn xml_unescape(s: &str) -> String {
+        s.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            // `&amp;`必须最后替换
+            .replace("&amp;", "&")
+    }
+
+    #[test]
+    fn test_favorites_excel() {
+        let rows = vec![
+            FavoriteExcelRow::from_resp_data(resp_data("测试漫画A", "作者甲", 12)),
+            // 标题中含有xml特殊字符，作者缺失
+            FavoriteExcelRow::from_resp_data(resp_data("B\"漫画\",<&>|:*?", "", 0)),
+        ];
+        let save_dir = std::env::temp_dir().join("pica_favorites_excel_test");
+        std::fs::create_dir_all(&save_dir).unwrap();
+        let save_path = save_dir.join("收藏夹测试.xlsx");
+        favorites_excel(&rows, &save_path).expect("写入收藏夹Excel失败");
+        assert!(save_path.exists());
+        // xlsx本质上是zip，读取内部的xml验证内容
+        let file = std::fs::File::open(&save_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        // 字符串内容可能在sharedStrings.xml或sheet1.xml中
+        let mut content = String::new();
+        for name in ["xl/sharedStrings.xml", "xl/worksheets/sheet1.xml"] {
+            if let Ok(mut entry) = archive.by_name(name) {
+                entry.read_to_string(&mut content).unwrap();
+            }
+        }
+        let content = xml_unescape(&content);
+        // 表头
+        assert!(content.contains("漫画名称"));
+        assert!(content.contains("作者"));
+        assert!(content.contains("总话数"));
+        // 数据行
+        assert!(content.contains("测试漫画A"));
+        assert!(content.contains("作者甲"));
+        assert!(content.contains("未知"));
+        // 含有xml特殊字符的标题也原样写入
+        assert!(content.contains("B\"漫画\",<&>|:*?"));
+        // 总话数以数字单元格写入
+        let mut sheet1 = String::new();
+        archive
+            .by_name("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .read_to_string(&mut sheet1)
+            .unwrap();
+        assert!(sheet1.contains("<v>12</v>"));
+        assert!(sheet1.contains("<v>0</v>"));
+        // 清理测试文件
+        std::fs::remove_file(&save_path).unwrap();
+    }
 }

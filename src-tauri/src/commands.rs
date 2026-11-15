@@ -13,7 +13,9 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::errors::{CommandError, CommandResult};
-use crate::events::{DownloadAllFavoritesEvent, UpdateDownloadedComicsEvent};
+use crate::events::{
+    DownloadAllFavoritesEvent, ExportFavoritesExcelEvent, UpdateDownloadedComicsEvent,
+};
 use crate::extensions::{AnyhowErrorToStringChain, AppHandleExt, WalkDirEntryExt};
 use crate::responses::{ChapterImageRespData, Pagination, UserProfileDetailRespData};
 use crate::types::{
@@ -302,6 +304,81 @@ pub async fn get_rank(app: AppHandle, rank_type: RankType) -> CommandResult<GetR
         .map_err(|err| CommandError::from("获取排行榜失败", err))?;
 
     Ok(get_rank_result)
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub async fn export_favorites_excel(
+    app: AppHandle,
+    sort: GetFavoriteSort,
+    save_path: String,
+) -> CommandResult<String> {
+    let pica_client = app.get_pica_client();
+
+    // 获取收藏夹的第一页，以确定总页数
+    let first_page = pica_client
+        .get_favorite(sort.clone(), 1)
+        .await
+        .context("获取收藏夹的第`1`页失败")
+        .map_err(|err| CommandError::from("导出收藏夹Excel失败", err))?;
+    let page_count = first_page.comics.pages;
+    let _ = ExportFavoritesExcelEvent::GettingFavorites {
+        current: 1,
+        total: page_count,
+    }
+    .emit(&app);
+    // 收集第一页中每部漫画的名称、作者、总话数
+    let mut favorite_rows: Vec<export::FavoriteExcelRow> = first_page
+        .comics
+        .docs
+        .into_iter()
+        .map(export::FavoriteExcelRow::from_resp_data)
+        .collect();
+    // 顺序获取收藏夹的剩余页，保证Excel中的行序与接口的排序一致
+    for page in 2..=page_count {
+        let page_resp = pica_client
+            .get_favorite(sort.clone(), page)
+            .await
+            .context(format!("获取收藏夹的第`{page}`页失败"))
+            .map_err(|err| CommandError::from("导出收藏夹Excel失败", err))?;
+        let _ = ExportFavoritesExcelEvent::GettingFavorites {
+            current: page,
+            total: page_count,
+        }
+        .emit(&app);
+        favorite_rows.extend(
+            page_resp
+                .comics
+                .docs
+                .into_iter()
+                .map(export::FavoriteExcelRow::from_resp_data),
+        );
+    }
+    // 至此，收藏夹中所有漫画的名称、作者、总话数已经收集完毕
+
+    // 规范化保存路径(补全.xlsx后缀)，并确保其所在的目录存在
+    let save_path = export::normalize_excel_save_path(&save_path)
+        .context("处理Excel保存路径失败")
+        .map_err(|err| CommandError::from("导出收藏夹Excel失败", err))?;
+    if let Some(parent) = save_path.parent() {
+        std::fs::create_dir_all(parent)
+            .context(format!("创建目录`{}`失败", parent.display()))
+            .map_err(|err| CommandError::from("导出收藏夹Excel失败", err))?;
+    }
+
+    export::favorites_excel(&favorite_rows, &save_path)
+        .map_err(|err| CommandError::from("导出收藏夹Excel失败", err))?;
+
+    let comic_count = favorite_rows.len() as i64;
+    let save_path = save_path.to_string_lossy().to_string();
+    let _ = ExportFavoritesExcelEvent::End {
+        comic_count,
+        save_path: save_path.clone(),
+    }
+    .emit(&app);
+    tracing::debug!("导出收藏夹Excel成功，共{comic_count}部漫画，已保存到`{save_path}`");
+
+    Ok(save_path)
 }
 
 #[allow(clippy::cast_possible_wrap)]

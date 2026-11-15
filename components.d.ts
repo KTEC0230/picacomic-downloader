@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ComicCard: typeof import('./src/components/ComicCard.vue')['default']
     DownloadAllFavoriteButton: typeof import('./src/components/DownloadAllFavoriteButton.vue')['default']
+    ExportFavoritesExcelButton: typeof import('./src/components/ExportFavoritesExcelButton.vue')['default']
     FloatLabelInput: typeof import('./src/components/FloatLabelInput.vue')['default']
     IconButton: typeof import('./src/components/IconButton.vue')['default']
     NA: typeof import('naive-ui')['NA']

@@ -8,8 +8,8 @@ use crate::commands::*;
 use crate::config::Config;
 use crate::download_manager::DownloadManager;
 use crate::events::{
-    DownloadSpeedEvent, DownloadTaskEvent, ExportCbzEvent, ExportPdfEvent, LogEvent,
-    UpdateDownloadedComicsEvent,
+    DownloadSpeedEvent, DownloadTaskEvent, ExportCbzEvent, ExportFavoritesExcelEvent,
+    ExportPdfEvent, LogEvent, UpdateDownloadedComicsEvent,
 };
 use crate::pica_client::PicaClient;
 
@@ -53,6 +53,7 @@ pub fn run() {
             show_path_in_file_manager,
             get_favorite,
             get_rank,
+            export_favorites_excel,
             get_downloaded_comics,
             export_cbz,
             export_pdf,
@@ -69,6 +70,7 @@ pub fn run() {
             DownloadAllFavoritesEvent,
             UpdateDownloadedComicsEvent,
             ExportCbzEvent,
+            ExportFavoritesExcelEvent,
             ExportPdfEvent,
             LogEvent,
         ]);

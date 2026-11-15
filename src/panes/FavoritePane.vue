@@ -5,6 +5,7 @@ import { commands, GetFavoriteSort } from '../bindings.ts'
 import { useStore } from '../store.ts'
 import { SelectProps } from 'naive-ui'
 import DownloadAllFavoriteButton from '../components/DownloadAllFavoriteButton.vue'
+import ExportFavoritesExcelButton from '../components/ExportFavoritesExcelButton.vue'
 
 const store = useStore()
 
@@ -51,6 +52,7 @@ watch(
           @update-value="getFavorite($event, 1)" />
       </n-input-group>
       <download-all-favorite-button />
+      <export-favorites-excel-button :sort="sortSelected" />
     </div>
     <div class="flex flex-col gap-row-2 overflow-auto box-border px-2">
       <comic-card
